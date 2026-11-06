@@ -1,0 +1,34 @@
+# Monthly release: on the first day of every month at 07:00 UTC, open the release checklist
+# with a version like 2026.11 and a due date at the end of the first week.
+# Also runnable by hand from the Actions tab (workflow_dispatch).
+name: Monthly release checklist
+
+on:
+  schedule:
+    - cron: "0 7 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  open-checklist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute version and due date
+        id: meta
+        run: |
+          echo "version=$(date -u +%Y.%m)" >> "$GITHUB_OUTPUT"
+          echo "due=$(date -u -d '+6 days' +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Open the release checklist
+        id: runbook
+        uses: metasticly/runbook-action@v1
+        with:
+          api-token: ${{ secrets.RUNBOOK_TOKEN }}
+          template: monthly-release-version
+          variables: |
+            version=${{ steps.meta.outputs.version }}
+          due-date: ${{ steps.meta.outputs.due }}
+
+      - run: echo "Opened run ${{ steps.runbook.outputs.run-id }} at ${{ steps.runbook.outputs.run-url }}"

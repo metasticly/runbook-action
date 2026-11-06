@@ -1,0 +1,30 @@
+# Forgejo Actions (also works on Gitea Actions): open the release checklist when a tag is pushed.
+# Save as .forgejo/workflows/release-checklist.yml and add the secret RUNBOOK_TOKEN
+# (repository Settings -> Actions -> Secrets).
+#
+# Forgejo resolves `uses:` against its DEFAULT_ACTIONS_URL; a full URL works on every instance.
+# Replace the URL with wherever you mirror the action.
+name: Release checklist
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  open-checklist:
+    runs-on: docker   # the default Forgejo runner label (node:20-bookworm image)
+    steps:
+      - name: Install jq if the image lacks it
+        run: command -v jq >/dev/null || (apt-get update -qq && apt-get install -y -qq jq)
+
+      - name: Open the release checklist
+        id: runbook
+        uses: https://github.com/metasticly/runbook-action@v1
+        with:
+          api-token: ${{ secrets.RUNBOOK_TOKEN }}
+          template: release-version   # slug of "Release {{version}}" (or its id or name)
+          title: "Release ${{ github.ref_name }}"
+          variables: |
+            version=${{ github.ref_name }}
+
+      - run: echo "Release checklist ${{ steps.runbook.outputs.run-url }}"

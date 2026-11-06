@@ -1,0 +1,46 @@
+# Deploy gate: open the "Production deploy" checklist for every push to main and only
+# deploy once a human has checked every required step in Runbook.
+#
+# Setup: create a Runbook API token (Settings -> API tokens), save it as the repository
+# secret RUNBOOK_TOKEN, and create a template named "Production deploy {{version}}".
+#
+# Note: a waiting job keeps a runner busy (GitHub-hosted minutes are billed while it waits).
+# Keep the timeout short, or use a self-hosted runner for long sign-offs.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  checklist:
+    runs-on: ubuntu-latest
+    timeout-minutes: 125
+    outputs:
+      run-url: ${{ steps.runbook.outputs.run-url }}
+    steps:
+      - name: Open the deploy checklist and wait for sign-off
+        id: runbook
+        uses: metasticly/runbook-action@v1
+        with:
+          api-token: ${{ secrets.RUNBOOK_TOKEN }}
+          template: production-deploy-version
+          title: "Deploy ${{ github.sha }}"
+          variables: |
+            version=${{ github.sha }}
+            actor=${{ github.actor }}
+          wait-for-completion: "true"
+          timeout: "7200"
+          poll-interval: "30"
+
+  deploy:
+    needs: checklist
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "Checklist ${{ needs.checklist.outputs.run-url }} is complete, deploying..."
+      # - run: ./deploy.sh

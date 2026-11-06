@@ -1,0 +1,77 @@
+name: "Runbook: start checklist run"
+description: "Open a Runbook checklist run (release, deploy or any procedure) from your pipeline, and optionally wait until it is completed."
+author: "Runbook (runbook.metastic.ch)"
+branding:
+  icon: check-square
+  color: green
+
+inputs:
+  api-token:
+    description: "Runbook API token (rb_...). Create one under Settings -> API tokens and store it as a secret."
+    required: true
+  template:
+    description: "Template id (e.g. 12), slug (e.g. release-checklist, shown in the template editor) or exact name (case-insensitive). Slugs survive renames."
+    required: true
+  title:
+    description: "Run title. Defaults to the template name with variables filled in."
+    required: false
+    default: ""
+  variables:
+    description: "Template variables, one key=value per line. Every variable the template uses must be set."
+    required: false
+    default: ""
+  due-date:
+    description: "Optional due date, YYYY-MM-DD."
+    required: false
+    default: ""
+  base-url:
+    description: "Runbook base URL."
+    required: false
+    default: "https://runbook.metastic.ch"
+  wait-for-completion:
+    description: "If true, poll the run and only succeed once it is completed (all required steps checked). Use it to gate a deploy. A cancelled run fails the step (exit code 4)."
+    required: false
+    default: "false"
+  timeout:
+    description: "Seconds to wait when wait-for-completion is true. The step fails after this."
+    required: false
+    default: "3600"
+  poll-interval:
+    description: "Seconds between status checks when waiting (minimum 2)."
+    required: false
+    default: "30"
+  idempotency-key:
+    description: "Idempotency-Key for starting the run. Re-running the same workflow attempt returns the run it already opened instead of a new one, and failed requests are retried safely. A short hash of the request is appended, so several Runbook steps in one workflow do not collide. Set to an empty string to disable."
+    required: false
+    default: "${{ github.run_id }}-${{ github.run_attempt }}"
+
+outputs:
+  run-id:
+    description: "Id of the created run."
+    value: ${{ steps.start.outputs.run-id }}
+  run-url:
+    description: "Browser URL of the created run."
+    value: ${{ steps.start.outputs.run-url }}
+  status:
+    description: "Run status after the step: open, completed or cancelled (a cancelled run fails the step when waiting)."
+    value: ${{ steps.start.outputs.status }}
+
+runs:
+  using: composite
+  steps:
+    - id: start
+      shell: bash
+      # Inputs are passed as environment variables, never interpolated into the script,
+      # so template names or variable values cannot inject shell code.
+      env:
+        RUNBOOK_API_TOKEN: ${{ inputs.api-token }}
+        RUNBOOK_TEMPLATE: ${{ inputs.template }}
+        RUNBOOK_TITLE: ${{ inputs.title }}
+        RUNBOOK_VARIABLES: ${{ inputs.variables }}
+        RUNBOOK_DUE_DATE: ${{ inputs.due-date }}
+        RUNBOOK_BASE_URL: ${{ inputs.base-url }}
+        RUNBOOK_WAIT: ${{ inputs.wait-for-completion }}
+        RUNBOOK_TIMEOUT: ${{ inputs.timeout }}
+        RUNBOOK_POLL_INTERVAL: ${{ inputs.poll-interval }}
+        RUNBOOK_IDEMPOTENCY_KEY: ${{ inputs.idempotency-key }}
+      run: '"$GITHUB_ACTION_PATH/scripts/start-run.sh"'

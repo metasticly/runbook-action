@@ -1,0 +1,74 @@
+# Lints and tests the action against a local mock API. No secrets, no calls to the real Runbook API.
+name: test
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: shellcheck
+        run: shellcheck -x scripts/start-run.sh tests/run-tests.sh
+      - name: Tests (mock API on localhost)
+        run: bash tests/run-tests.sh
+
+  action:
+    # Runs the action itself (as a user would) against the mock API, to check action.yml wiring and outputs.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Start mock API
+        id: mock
+        run: |
+          mkdir -p "$RUNNER_TEMP/requests"
+          python3 -I tests/mock_server.py "$RUNNER_TEMP/port" "$RUNNER_TEMP/requests" &
+          for _ in $(seq 1 50); do [ -s "$RUNNER_TEMP/port" ] && break; sleep 0.1; done
+          echo "url=http://127.0.0.1:$(cat "$RUNNER_TEMP/port")" >> "$GITHUB_OUTPUT"
+      - name: Run the action
+        id: runbook
+        uses: ./
+        with:
+          api-token: rb_ok   # scenario token understood by tests/mock_server.py, not a secret
+          template: release-version
+          variables: |
+            version=${{ github.sha }}
+          base-url: ${{ steps.mock.outputs.url }}
+      - name: Check outputs
+        env:
+          RUN_ID: ${{ steps.runbook.outputs.run-id }}
+          RUN_URL: ${{ steps.runbook.outputs.run-url }}
+          STATUS: ${{ steps.runbook.outputs.status }}
+        run: |
+          echo "run-id=$RUN_ID run-url=$RUN_URL status=$STATUS"
+          test -n "$RUN_ID" && test -n "$RUN_URL" && test "$STATUS" = open
+      - name: Run the action and wait for completion
+        id: gate
+        uses: ./
+        with:
+          api-token: rb_ok
+          template: release-version
+          variables: version=gate
+          base-url: ${{ steps.mock.outputs.url }}
+          wait-for-completion: "true"
+          poll-interval: "2"
+          timeout: "60"
+          idempotency-key: ""
+      - name: Check gate status
+        env:
+          STATUS: ${{ steps.gate.outputs.status }}
+        run: test "$STATUS" = completed
